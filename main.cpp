@@ -10,6 +10,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 using namespace ftxui;
@@ -31,18 +32,18 @@ bool isTextFile(const fs::path &path) {
 }
 
 std::string readFile(std::string name) {
-    std::vector<std::string> list;
-    std::string dirs;
+  std::vector<std::string> list;
+  std::string dirs;
   if (!isTextFile(name)) {
     return "not readable";
-  } else if(fs::is_directory(name)){
-      for (const auto &entry : fs::directory_iterator(name)) {
-          list.push_back(entry.path().filename().string());
-      }
-      for (const auto &i : list) {
-          dirs += i + '\n';
-      }
-      return dirs;
+  } else if (fs::is_directory(name)) {
+    for (const auto &entry : fs::directory_iterator(name)) {
+      list.push_back(entry.path().filename().string());
+    }
+    for (const auto &i : list) {
+      dirs += i + '\n';
+    }
+    return dirs;
   } else {
     std::ifstream file(name);
     std::ostringstream buffer;
@@ -66,7 +67,7 @@ void load_list(std::vector<std::string> &list, bool show_hidden) {
 }
 
 int main() {
-  auto screen = ScreenInteractive::TerminalOutput();
+  auto screen = ScreenInteractive::Fullscreen();
   int selected = 0;
   std::vector<std::string> list;
   load_list(list, false);
@@ -75,7 +76,11 @@ int main() {
   option.entries_option.transform = [](EntryState state) {
     Element e = text(state.label);
     if (state.active) {
-      e = text("❯ " + state.label) | color(Color::DodgerBlue1);
+      if (fs::is_directory(state.label)) {
+        e = text("\uea83 " + state.label) | color(Color::Yellow1);
+      } else {
+        e = text("❯ " + state.label) | color(Color::DodgerBlue1);
+      }
     } else {
       e = text("  " + state.label) | dim;
     }
@@ -88,17 +93,40 @@ int main() {
                      text(list[selected])) |
                     color(Color::DodgerBlue1),
                 separator() | color(Color::DodgerBlue3),
-                text(readFile(list[selected])) | size(WIDTH, EQUAL, 84) |
-                    size(HEIGHT, EQUAL, 8));
-  });
+                text(readFile(list[selected])));
+           });
 
   auto container = Container::Horizontal({menu, preview});
-  auto app = Renderer(container, [&] {
-    return hbox({
-        menu->Render() | color(Color::DodgerBlue1) | border |
-            size(HEIGHT, EQUAL, 10) | size(WIDTH, EQUAL, 16),
-        preview->Render() | border | flex,
-    });
-  });
+  auto app = CatchEvent(
+      Renderer(container,
+               [&] {
+                 return hbox({
+                     menu->Render() | color(Color::DodgerBlue1) | border |
+                     size(WIDTH, GREATER_THAN, 20),
+
+                     preview->Render() | border | flex
+                 });
+               }),
+      [&](Event event) {
+        if (event == Event::Character('q')) {
+          screen.Exit();
+          return true;
+        }
+        if (event == Event::Character('l')) {
+            if (fs::is_directory(list[selected])) {
+                fs::current_path(list[selected]);
+                load_list(list, false);
+                selected = 0;
+            }
+            return true;
+        }
+        if (event == Event::Character('h')) {
+            fs::current_path(fs::path(fs::current_path()).parent_path());
+            load_list(list, false);
+            selected = 0;
+            return true;
+        }
+        return false; 
+      });
   screen.Loop(app);
 }
