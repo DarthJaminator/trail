@@ -3,6 +3,8 @@
 #include "ftxui/component/component_options.hpp"
 #include "ftxui/component/screen_interactive.hpp"
 #include "ftxui/dom/elements.hpp"
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -12,8 +14,15 @@
 #include <vector>
 #include <unistd.h>
 
+// TODO: maybe wrap text && popup window for processing operations && [create, delete, copy, move, selection, rename,...] && more compact workflow && some title and status(especially statusbar bottom)
+
 namespace fs = std::filesystem;
 using namespace ftxui;
+
+std::string getHome() {
+    std::string home = std::getenv("HOME");
+    return home;
+}
 
 bool isTextFile(const fs::path &path) {
   char buffer[1024];
@@ -45,10 +54,14 @@ std::string readFile(std::string name) {
     }
     return dirs;
   } else {
-    std::ifstream file(name);
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
+    try {
+        std::ifstream file(name);
+        std::ostringstream buffer;
+        buffer << file.rdbuf();
+        return buffer.str();
+    } catch(std::exception &e) {
+        return e.what();
+    }
   }
 }
 
@@ -77,9 +90,9 @@ int main() {
     Element e = text(state.label);
     if (state.active) {
       if (fs::is_directory(state.label)) {
-        e = text("\uea83 " + state.label) | color(Color::Yellow1);
+        e = text("\uea83 " + state.label) | color(Color::Yellow);
       } else {
-        e = text("❯ " + state.label) | color(Color::DodgerBlue1);
+        e = text("❯ " + state.label) | color(Color::Red);
       }
     } else {
       e = text("  " + state.label) | dim;
@@ -91,8 +104,9 @@ int main() {
   auto preview = Renderer([&] {
     return vbox(hbox(text("preview: ") | bold | color(Color::White),
                      text(list[selected])) |
-                    color(Color::DodgerBlue1),
-                separator() | color(Color::DodgerBlue3),
+                     color(Color::Red),
+                     text(fs::current_path().relative_path().string()),
+                separator() | color(Color::Yellow),
                 text(readFile(list[selected])));
            });
 
@@ -103,7 +117,6 @@ int main() {
                  return hbox({
                      menu->Render() | color(Color::DodgerBlue1) | border |
                      size(WIDTH, GREATER_THAN, 20),
-
                      preview->Render() | border | flex
                  });
                }),
@@ -126,7 +139,21 @@ int main() {
             selected = 0;
             return true;
         }
-        return false; 
+        if (event == Event::Character('j')) {
+            selected++;
+            if (selected >= list.size()) {
+                selected = 0;
+            }
+            return true;
+        }
+        if (event == Event::Character('k')) {
+            selected--;
+            if (selected == -1) {
+                selected = list.size();
+            }
+            return true;
+        }
+        return false;
       });
   screen.Loop(app);
 }
